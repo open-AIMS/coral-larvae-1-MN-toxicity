@@ -56,6 +56,17 @@ fit3k <- brm(bf_3k + set_rescor(FALSE), data = dat_use, chains = 4, cores = 4,
            iter = iter, warmup = iter-1000, family = "beta_binomial")
 
 #save(fit3k, file = "fit3k_bb_DRomicsGenes_poly_iter1000.RData")
+
+
+#### run using binomial family to compare
+
+fit3k_binom <- brm(bf_3k + set_rescor(FALSE), data = dat_use, chains = 4, cores = 4, 
+             #threads = threading(4),
+             init = 0, seed = 100,
+             iter = iter, warmup = iter-1000, family = "binomial")
+
+#save(fit3k_binom, file = "fit3k_binom_DRomicsGenes_poly_iter1000.RData")
+
 # end hpc ----------------------------------------------------------------------
 
 load(file = "fit3k_bb_DRomicsGenes_poly_iter1000.RData")  
@@ -268,7 +279,7 @@ loo_compare(fit5k_test, fit4k_test, fit3k_test) # condensed version of loo comma
 #------ Above agrees with weights, 3k best (also most simple) for this dataset
 
 
-####### Filter toxval_nsec_lower to only exclude genes with NSEC at at highest concentration ######
+####### Filter toxval_nsec_lower to only exclude genes with NSEC upper ci at at highest concentration ######
 
 #load(file = "toxval_nsec_lower_bb_5k_DRomicsGenes_backtransformed.RData")
 
@@ -280,11 +291,11 @@ length(which(toxval_nsec_lw_F2$direction == "inc")) #25 increasing genes
 #write.csv(toxval_nsec_lw_F2, file = "lower_NSECs_filtered_52genes.csv")
 #save(toxval_nsec_lw_F2, file = "Lower_NSECs_filteredData_52genes.RData")
 
-#### SSD #### 
+#### SSD - 52 genes #### 
 
 library(ssdtools)
 
-#load(file = "Lower_NSECs_filteredData_52genes.RData")
+#load(file = "Lower_NSECs_filteredData_52genes.RData") #excludes genes with only uppper CI at highest conc.
 
 ssd_dat <- toxval_nsec_lw_F2
 names(ssd_dat)[names(ssd_dat) == 'val'] <- 'Conc'
@@ -309,9 +320,9 @@ hc5 <- ssd_hc(fit, proportion = 0.05, ci=TRUE, nboot = 1000L, min_pboot = 0.8)
 hc10 <- ssd_hc(fit, proportion = 0.10, ci=TRUE, nboot = 1000L, min_pboot = 0.8)
 hc50 <- ssd_hc(fit, proportion = 0.50, ci=TRUE, nboot = 1000L, min_pboot = 0.8)
 print(hc1) #52 genes = 1.13 (0.29-4.16)
-print(hc5) # 4.75 (1.31-15.3); 52 genes = 6.44 (2.65-14.4)
-print(hc10) # 8.75 (2.9-24.4); 52 genes = 13.8 (6.64-27.9)
-print(hc50) # 41.5 (25.2-70.8); 52 genes = 101 (73.5-140)
+print(hc5) #52 genes = 6.44 (2.65-14.4)
+print(hc10) #52 genes = 13.8 (6.64-27.9)
+print(hc50) #52 genes = 101 (73.5-140)
 
 ## Calculate model-averaged predictions
 
@@ -339,3 +350,93 @@ ssd_plot(ssd_dat, pred,
   geom_hcintersect(xintercept = c(1.13, 6.44, 13.8, 101), yintercept = c(0.01, 0.05, 0.1, 0.5)) +
   theme_classic()
 ggsave('SSD_52genes_HC1_5_10_50_genesByColor.pdf', width = 15, height = 15, units = 'cm') 
+
+#### SSD - 78 genes #### 
+
+# 26 genes with previously filtered out will be included as right-censored data
+
+load(file = "toxval_nsec_lower_bb_3k_poly_DRomicsGenes_backtransformed.RData") # all fitted 78 genes
+
+set.seed(42)
+
+ssd_dat <- toxval_nsec_lower
+names(ssd_dat)[names(ssd_dat) == 'val'] <- 'Conc'
+ssd_dat <- ssd_dat |> 
+  mutate_at(vars(lw, Conc, up, ref), as.numeric)
+
+max_conc <- 882
+
+# Censored values are entered as an interval: Conc is the lower bound and
+# right is the upper bound, which is Inf for the censored rows. For the
+# uncensored rows the two are equal, so they are treated as exact values.
+
+ssd_dat$right <- ifelse(ssd_dat$Conc >= max_conc, Inf, ssd_dat$Conc)
+table(censored = is.infinite(ssd_dat$right))
+
+## Fit models
+
+# ssd_fit_bcanz() has no `right` argument, so ssd_fit_dists() is called with
+# the settings ssd_fit_bcanz() uses. lnorm_lnorm is excluded because ssdtools
+# will only model-average censored fits when every distribution has the same
+# number of parameters, and lnorm_lnorm has five against two for the others.
+
+fit <- ssd_fit_dists(
+  ssd_dat,
+  left = "Conc",
+  right = "right",
+  dists = c("gamma", "lgumbel", "llogis", "lnorm", "weibull"),
+  rescale = FALSE,
+  reweight = FALSE,
+  computable = FALSE,
+  at_boundary_ok = TRUE
+)
+
+ssd_plot_cdf(fit, delta = 20) 
+
+## Calculate goodness of fit 
+
+# With censored data ssdtools weights the distributions by AIC rather than
+# AICc, and the goodness-of-fit statistics (ad, ks, cvm) are not available.
+
+ssd_gof(fit, wt = TRUE)
+
+
+## Calculate HC5 values
+
+hc1 <- ssd_hc(fit, proportion = 0.01, ci=TRUE, nboot = 1000L, parametric = FALSE)
+hc5 <- ssd_hc(fit, proportion = 0.05, ci=TRUE, nboot = 1000L, parametric = FALSE)
+hc10 <- ssd_hc(fit, proportion = 0.10, ci=TRUE, nboot = 1000L, parametric = FALSE)
+hc50 <- ssd_hc(fit, proportion = 0.50, ci=TRUE, nboot = 1000L, parametric = FALSE)
+
+print(hc1) #78 genes = 1.26 (0.26-5.40)
+print(hc5) #78 genes = 6.65 (2.60-16.2)
+print(hc10) #78 genes = 15.2 (7.70-30.2)
+print(hc50) #78 genes = 281 (171-483)
+
+## Calculate model-averaged predictions
+
+set.seed(99)
+
+pred <- predict(fit, ci = TRUE, parametric = FALSE)
+
+save(fit, hc1, hc5, hc10, hc50, pred, file = "SSDfitData_78genes.RData")
+
+## Plot
+
+ssd_plot(ssd_dat, pred,
+         right = "right",
+         #shape = "direction",
+         color = "direction",
+         hc = NULL,
+         xlab = "1-methylnaphthalene (μg/L)",
+         ylab = "Genes affected", ribbon = TRUE) +
+  expand_limits(x = 3000) +
+  #scale_shape_manual(values = c(25,17)) +
+  scale_color_manual(values = c("#156082", "#ED9C3F")) +
+  #geom_hcintersect(xintercept = c(1.13, 6.44, 13.8, 101), yintercept = c(0.01, 0.05, 0.1, 0.5)) +
+  geom_hcintersect(xintercept = c(1.26, 6.65, 15.2, 79.9, 281), yintercept = c(0.01, 0.05, 0.1, 0.5, 0.5)) +
+  theme_classic()
+ggsave('SSD_78genesCensored_HC1_5_10_50_genesByColor.pdf', width = 18, height = 15, units = 'cm')
+
+
+
