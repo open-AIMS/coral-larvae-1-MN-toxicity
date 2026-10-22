@@ -8,7 +8,7 @@ Luter, H.M., Nordbord, F.M., Damjanovic, K., Laffy, P.W., Brinkman, D.L., Fisher
 
 *Data used in this analysis can be found at:*
 
-Australian Institute of Marine Science (AIMS) (insert AIMS metadata DOI when available)
+Australian Institute of Marine Science (AIMS) (2026) Molecular responses of coral larvae to 1-methylnaphthalene. https://apps.aims.gov.au/metadata/view/f6e79a3a-78d4-4d0c-aa18-706cd29b5c50
 
 *Licensing*
 
